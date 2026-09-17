@@ -9,6 +9,7 @@ makes exactly one call.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -19,6 +20,8 @@ from . import engine as eng
 from . import consensus, copilot, explain, llm, store
 from .ml import ml
 from .nowcast import status as nowcast_status
+
+log = logging.getLogger("jaldrishti.api")
 from .config import (
     ALERT_TIERS,
     APP_NAME,
@@ -638,4 +641,13 @@ async def city_hotspots(
     try:
         return await hotspots(location_id, capacity, scenario_mm_h, scenario_hours)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Hyperlocal data unavailable: {exc}")
+        log.warning("hotspots %s failed: %s", location_id, str(exc)[:300])
+        busy = "429" in str(exc) or "rate limit" in str(exc).lower()
+        raise HTTPException(
+            status_code=503 if busy else 502,
+            detail=(
+                "The weather service is busy right now, so street-level data for this city could not be loaded. Please try again in a minute."
+                if busy
+                else "Street-level data for this city is temporarily unavailable. Please try again shortly."
+            ),
+        )

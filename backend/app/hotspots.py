@@ -33,6 +33,7 @@ by re-running with rainfall at 60 % and 140 %, and by stating plainly that the D
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import logging
 import math
@@ -42,6 +43,7 @@ from pathlib import Path
 
 import httpx
 
+from . import sources
 from .config import CACHE_DIR as CACHE_ROOT, OPEN_METEO_ELEVATION, OPEN_METEO_FORECAST, TIMEZONE
 from .engine import LOCATIONS_BY_ID
 from .features import _now_index
@@ -51,9 +53,10 @@ log = logging.getLogger("jaldrishti.hotspots")
 N = 16
 STEP = 0.0072  # degrees, ~800 m
 CACHE_DIR = CACHE_ROOT / "hotspots"
+SEED_DIR = Path(__file__).resolve().parent / "data" / "hotspots"
 OVERPASS = [
-    "https://overpass-api.de/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 ]
 UA = {"User-Agent": "JalDrishti-prototype/1.0 (flood research)"}
@@ -87,34 +90,48 @@ async def _elevations(client: httpx.AsyncClient, pts: list[tuple[float, float]])
     out: list[float] = []
     for k in range(0, len(pts), 100):
         b = pts[k : k + 100]
-        r = await client.get(
+        payload = await sources._get_json(
+            client,
             OPEN_METEO_ELEVATION,
-            params={"latitude": ",".join(str(p[0]) for p in b), "longitude": ",".join(str(p[1]) for p in b)},
+            {"latitude": ",".join(str(p[0]) for p in b), "longitude": ",".join(str(p[1]) for p in b)},
+            tries=3,
         )
-        r.raise_for_status()
-        out.extend(r.json()["elevation"])
+        out.extend(payload["elevation"])
     return out
 
 
 async def _osm(client: httpx.AsyncClient, s: float, w: float, n: float, e: float) -> list[dict] | None:
-    q = f"""[out:json][timeout:50];
-(
- way["waterway"~"^(drain|canal|river|stream|ditch)$"]({s},{w},{n},{e});
- nwr["amenity"~"^(hospital|school|fire_station)$"]({s},{w},{n},{e});
- way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"]({s},{w},{n},{e});
- way["highway"]["tunnel"="yes"]({s},{w},{n},{e});
- way["railway"="rail"]({s},{w},{n},{e});
- way["landuse"~"^(residential|commercial|industrial|retail)$"]({s},{w},{n},{e});
-);
-out center tags;"""
-    for mirror in OVERPASS:
-        try:
-            r = await client.post(mirror, data={"data": q}, timeout=75, headers=UA)
-            if r.status_code == 200:
-                return r.json().get("elements", [])
-        except Exception as exc:
-            log.info("overpass %s failed: %s", mirror, str(exc)[:80])
-    return None
+    """
+    OpenStreetMap features for the city box, as six small queries rather than one
+    large one: public Overpass servers time out on the combined query for dense
+    cities. Every part must succeed, otherwise the grid is marked OSM-less.
+    """
+    bbox = f"({s},{w},{n},{e})"
+    parts = [
+        f'way["waterway"~"^(drain|canal|river|stream|ditch)$"]{bbox};',
+        f'nwr["amenity"~"^(hospital|school|fire_station)$"]{bbox};',
+        f'way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"]{bbox};',
+        f'way["highway"]["tunnel"="yes"]{bbox};',
+        f'way["railway"="rail"]{bbox};',
+        f'way["landuse"~"^(residential|commercial|industrial|retail)$"]{bbox};',
+    ]
+    elements: list[dict] = []
+    for part in parts:
+        q = f"[out:json][timeout:90];({part});out center tags;"
+        got = None
+        for mirror in OVERPASS:
+            try:
+                r = await client.post(mirror, data={"data": q}, timeout=110, headers=UA)
+                if r.status_code == 200:
+                    got = r.json().get("elements", [])
+                    break
+                log.info("overpass %s HTTP %s", mirror, r.status_code)
+            except Exception as exc:
+                log.info("overpass %s failed: %s", mirror, str(exc)[:80])
+        if got is None:
+            return None
+        elements.extend(got)
+    return elements
 
 
 def _d8_accumulation(elev: list[float]) -> list[int]:
@@ -138,7 +155,7 @@ def _d8_accumulation(elev: list[float]) -> list[int]:
     return acc
 
 
-async def build_static(location_id: str) -> dict:
+async def build_static(location_id: str, use_seed: bool = True) -> dict:
     loc = LOCATIONS_BY_ID[location_id]
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = CACHE_DIR / f"{location_id}.json"
@@ -147,6 +164,15 @@ async def build_static(location_id: str) -> dict:
         # A cache built while Overpass was down is retried at most once a day.
         if cached.get("osm_ok") or time.time() - cached.get("built_ts", 0) < 86400:
             return cached
+    seed = SEED_DIR / f"{location_id}.json.gz"
+    if use_seed and seed.exists():
+        # Terrain and mapped drains change slowly: the bundled grid avoids ~256
+        # elevation lookups and a heavy Overpass query on a fresh deployment.
+        with gzip.open(seed, "rt", encoding="utf-8") as fh:
+            static = json.load(fh)
+        if static.get("osm_ok"):
+            path.write_text(json.dumps(static), encoding="utf-8")
+            return static
 
     pts = _grid(loc["lat"], loc["lon"])
     s, w = pts[0][0] - STEP / 2, pts[0][1] - STEP / 2
@@ -283,9 +309,11 @@ async def _rain_field(static: dict) -> dict:
     lons = [w, (w + e) / 2, e]
     pts = [(la, lo) for la in lats for lo in lons]
     async with httpx.AsyncClient(timeout=60, headers=UA) as client:
-        r = await client.get(
+        # Through sources._get_json so a rate-limited server retries via the relay.
+        payload = await sources._get_json(
+            client,
             OPEN_METEO_FORECAST,
-            params={
+            {
                 "latitude": ",".join(f"{p[0]:.4f}" for p in pts),
                 "longitude": ",".join(f"{p[1]:.4f}" for p in pts),
                 "hourly": "precipitation",
@@ -293,9 +321,8 @@ async def _rain_field(static: dict) -> dict:
                 "forecast_days": 2,
                 "timezone": TIMEZONE,
             },
+            tries=3,
         )
-    r.raise_for_status()
-    payload = r.json()
     payload = payload if isinstance(payload, list) else [payload]
     times = payload[0]["hourly"]["time"]
     series = [[v or 0.0 for v in item["hourly"]["precipitation"]] for item in payload]
