@@ -87,6 +87,12 @@ _LOCAL_ORIGINS = r"http://(localhost|127\.0\.0\.1):\d+"
 _EXTRA_ORIGINS = os.getenv("JALDRISHTI_CORS_REGEX", "").strip()
 CORS_ORIGIN_REGEX = f"(?:{_LOCAL_ORIGINS})|(?:{_EXTRA_ORIGINS})" if _EXTRA_ORIGINS else _LOCAL_ORIGINS
 
+# Relay on Vercel's Mumbai region (frontend/api/cwc.js). The CWC portal does not
+# answer servers outside India, and Open-Meteo rate limits busy shared IPs; both
+# are read through the relay when it is configured.
+CWC_RELAY = os.getenv("JALDRISHTI_CWC_RELAY", "").strip().rstrip("/")
+CWC_RELAY_TOKEN = os.getenv("JALDRISHTI_CWC_RELAY_TOKEN", "").strip()
+
 # Where regenerable caches (archive replays, hotspot grids) live. Point it at a
 # persistent disk in production; the default sits beside the code.
 CACHE_DIR = Path(os.getenv("JALDRISHTI_CACHE_DIR", BASE_DIR.parent / ".cache"))

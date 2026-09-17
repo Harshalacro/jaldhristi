@@ -45,7 +45,7 @@ from urllib.parse import urlencode
 import httpx
 
 from . import store
-from .config import DATA_DIR
+from .config import CWC_RELAY, CWC_RELAY_TOKEN, DATA_DIR
 
 log = logging.getLogger("jaldrishti.official")
 
@@ -57,8 +57,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (JalDrishti flood-risk research prototype)
 # server in Singapore). JALDRISHTI_CWC_RELAY points at the small relay in
 # frontend/api/cwc.js, deployed on Vercel's Mumbai region, which forwards only
 # CWC data paths and requires a shared token.
-CWC_RELAY = os.getenv("JALDRISHTI_CWC_RELAY", "").strip().rstrip("/")
-CWC_RELAY_TOKEN = os.getenv("JALDRISHTI_CWC_RELAY_TOKEN", "").strip()
 CWC_HOST = "ffs.india-water.gov.in"
 RELAY_BATCH = 100
 

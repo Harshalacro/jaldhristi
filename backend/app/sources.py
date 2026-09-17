@@ -16,6 +16,7 @@ Design notes worth knowing before editing:
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, Iterable, Sequence
@@ -28,12 +29,16 @@ from .config import (
     CLIMATOLOGY_END_YEAR,
     CLIMATOLOGY_START_YEAR,
     COORDS_PER_MIN,
+    CWC_RELAY,
+    CWC_RELAY_TOKEN,
     HTTP_TIMEOUT,
     OPEN_METEO_ARCHIVE,
     OPEN_METEO_FLOOD,
     OPEN_METEO_FORECAST,
     TIMEZONE,
 )
+
+log = logging.getLogger("jaldrishti.sources")
 
 USER_AGENT = "JalDrishti-prototype/1.0 (hackathon flood-risk prototype)"
 
@@ -85,11 +90,27 @@ async def _get_json(
 ) -> Any:
     delay = 20.0
     last: Exception | None = None
+    via_relay = False
     for attempt in range(1, tries + 1):
         try:
-            resp = await client.get(url, params=params, timeout=timeout)
+            if via_relay:
+                target = str(httpx.URL(url, params=params))
+                resp = await client.get(
+                    CWC_RELAY,
+                    headers={"x-relay-token": CWC_RELAY_TOKEN, "x-cwc-target": target},
+                    timeout=max(timeout, 75.0),
+                )
+            else:
+                resp = await client.get(url, params=params, timeout=timeout)
             if resp.status_code == 429:
-                raise SourceError("rate limited (429)")
+                if CWC_RELAY and not via_relay:
+                    # This server's shared IP is over Open-Meteo's quota; the
+                    # Mumbai relay has its own, so retry through it at once.
+                    log.info("Open-Meteo rate limited this server; retrying via relay")
+                    via_relay = True
+                    last = SourceError("rate limited (429)")
+                    continue
+                raise SourceError("rate limited (429)" + (" via relay" if via_relay else ""))
             resp.raise_for_status()
             return resp.json()
         except Exception as exc:

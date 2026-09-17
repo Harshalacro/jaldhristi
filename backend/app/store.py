@@ -243,6 +243,28 @@ def save_climatology(
         )
 
 
+def seed_climatology(seed_path: Path) -> int:
+    """
+    Insert climatology rows from a bundled seed file for locations that have
+    none yet. Existing rows (built locally, possibly newer) are never replaced.
+    """
+    if not seed_path.exists():
+        return 0
+    import gzip
+
+    with gzip.open(seed_path, "rt", encoding="utf-8") as fh:
+        rows = json.load(fh)
+    with db() as conn:
+        have = {r[0] for r in conn.execute("SELECT location_id FROM climatology").fetchall()}
+        fresh = [r for r in rows if r["location_id"] not in have]
+        conn.executemany(
+            "INSERT INTO climatology (location_id, built_at, start_year, end_year, lat, lon, stats) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(r["location_id"], r["built_at"], r["start_year"], r["end_year"], r["lat"], r["lon"], json.dumps(r["stats"])) for r in fresh],
+        )
+    return len(fresh)
+
+
 def load_climatology(expected_cells: dict[str, tuple[float, float]] | None = None) -> dict[str, dict]:
     """
     Load cached climatology, dropping any entry that was built at a different
