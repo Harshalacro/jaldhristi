@@ -36,9 +36,11 @@ import asyncio
 import json
 import logging
 import math
+import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
+from urllib.parse import urlencode
 
 import httpx
 
@@ -50,6 +52,56 @@ log = logging.getLogger("jaldrishti.official")
 CWC = "https://ffs.india-water.gov.in"
 SACHET = "https://sachet.ndma.gov.in/cap_public_website/FetchAllAlertDetails"
 HEADERS = {"User-Agent": "Mozilla/5.0 (JalDrishti flood-risk research prototype)", "Accept": "application/json"}
+
+# The CWC portal does not answer requests from outside India (e.g. a Render
+# server in Singapore). JALDRISHTI_CWC_RELAY points at the small relay in
+# frontend/api/cwc.js, deployed on Vercel's Mumbai region, which forwards only
+# CWC data paths and requires a shared token.
+CWC_RELAY = os.getenv("JALDRISHTI_CWC_RELAY", "").strip().rstrip("/")
+CWC_RELAY_TOKEN = os.getenv("JALDRISHTI_CWC_RELAY_TOKEN", "").strip()
+CWC_HOST = "ffs.india-water.gov.in"
+RELAY_BATCH = 100
+
+# CWC timestamps are Indian Standard Time without an offset.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _cwc(path: str) -> str:
+    return f"{CWC}{path}"
+
+
+class _RelayTransport(httpx.AsyncBaseTransport):
+    """
+    Sends requests for the CWC host to the relay instead, with the original path
+    and query in a header; every other host (SACHET, the relay itself) goes
+    direct. Call sites keep using plain CWC URLs.
+    """
+
+    def __init__(self) -> None:
+        self._inner = httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == CWC_HOST:
+            headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")}
+            headers["x-cwc-target"] = request.url.raw_path.decode("ascii")
+            headers["x-relay-token"] = CWC_RELAY_TOKEN
+            request = httpx.Request("GET", CWC_RELAY, headers=headers, extensions=request.extensions)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+def _client(**kwargs) -> httpx.AsyncClient:
+    """HTTP client for CWC/SACHET calls, routed through the relay when configured."""
+    kwargs.setdefault("headers", HEADERS)
+    if CWC_RELAY:
+        kwargs["transport"] = _RelayTransport()
+    return httpx.AsyncClient(**kwargs)
+
+
+def _now_ist() -> datetime:
+    return datetime.now(IST).replace(tzinfo=None)
 
 CATALOG_PATH = DATA_DIR / "cwc_stations.json"
 CATALOG_MAX_AGE_DAYS = 7
@@ -122,8 +174,8 @@ class OfficialData:
         Station registry with danger marks and coordinates. Static data, rebuilt
         weekly: ~10 s for the level table, ~1 s per 100 coordinates.
         """
-        async with httpx.AsyncClient(timeout=90, headers=HEADERS) as c:
-            r = await c.get(f"{CWC}/iam/api/flood-forecast-static/", headers={"class-name": "FloodForecastStaticDto"})
+        async with _client(timeout=90) as c:
+            r = await c.get(_cwc("/iam/api/flood-forecast-static/"), headers={"class-name": "FloodForecastStaticDto"})
             r.raise_for_status()
             static = [s for s in r.json() if s.get("dangerLevel") or s.get("warningLevel")]
 
@@ -134,7 +186,7 @@ class OfficialData:
                 spec = {"expression": {"valueIsRelationField": False, "fieldName": "stationCode", "operator": "in", "value": batch}}
                 try:
                     g = await c.get(
-                        f"{CWC}/iam/api/layer-station-geo/specification/",
+                        _cwc("/iam/api/layer-station-geo/specification/"),
                         params={"specification": json.dumps(spec)},
                         headers={"class-name": "LayerStationGeoDto"},
                     )
@@ -201,9 +253,9 @@ class OfficialData:
                         return exc
                 await asyncio.sleep(2)
 
-        async with httpx.AsyncClient(timeout=45, headers=HEADERS) as c:
+        async with _client(timeout=httpx.Timeout(45, connect=10)) as c:
             gauges, alerts = await asyncio.gather(
-                get_with_retry(c, f"{CWC}/ffm/api/station-water-level-above-warning/"),
+                get_with_retry(c, _cwc("/ffm/api/station-water-level-above-warning/")),
                 get_with_retry(c, SACHET),
             )
 
@@ -217,7 +269,7 @@ class OfficialData:
             self.errors.pop("cwc", None)
             store.record_source_health("cwc_live", ok=True, latency_ms=None, detail=f"{len(self.above)} gauges above warning")
         else:
-            self.errors["cwc"] = str(gauges)[:200] if not isinstance(gauges, httpx.Response) else f"HTTP {gauges.status_code}"
+            self.errors["cwc"] = repr(gauges)[:200] if not isinstance(gauges, httpx.Response) else f"HTTP {gauges.status_code}"
             store.record_source_health("cwc_live", ok=False, latency_ms=None, detail=self.errors["cwc"])
 
         if isinstance(alerts, httpx.Response) and alerts.status_code == 200:
@@ -225,7 +277,7 @@ class OfficialData:
             self.errors.pop("sachet", None)
             store.record_source_health("ndma_sachet", ok=True, latency_ms=None, detail=f"{len(self.alerts)} active alerts")
         else:
-            self.errors["sachet"] = str(alerts)[:200] if not isinstance(alerts, httpx.Response) else f"HTTP {alerts.status_code}"
+            self.errors["sachet"] = repr(alerts)[:200] if not isinstance(alerts, httpx.Response) else f"HTTP {alerts.status_code}"
             store.record_source_health("ndma_sachet", ok=False, latency_ms=None, detail=self.errors["sachet"])
 
         self.fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -266,41 +318,29 @@ class OfficialData:
 
     async def refresh_readings(self, codes: Sequence[str]) -> int:
         """
-        Latest hourly level for specific gauges (the ones beside monitored towns,
-        plus any the portal lists as alerting), eight at a time. ~0.3 s each.
-        Readings older than 24 h are discarded as a stalled telemetry feed.
+        Latest hourly level for specific gauges, eight at a time directly or a
+        hundred per call through the relay. Readings older than 24 h are
+        discarded as a stalled telemetry feed. If the portal cannot be reached
+        at all, give up after one quick probe instead of timing out per gauge.
         """
         codes = [c for c in dict.fromkeys(codes) if c in self.catalog]
-        sem = asyncio.Semaphore(8)
-        now = datetime.now()
+        if not codes:
+            return 0
+        now = _now_ist()
         fresh = 0
         failed = 0
+        sort = json.dumps({"sortOrderDtos": [{"sortDirection": "DESC", "field": "id.dataTime"}]})
 
-        async def one(c: httpx.AsyncClient, code: str) -> None:
-            nonlocal fresh, failed
+        def params_for(code: str) -> dict:
             spec = _spec_and(_spec_eq("id.stationCode", code), _spec_eq("id.datatypeCode", "HHS"))
-            sort = {"sortOrderDtos": [{"sortDirection": "DESC", "field": "id.dataTime"}]}
-            rows = None
-            async with sem:
-                # The portal answers 500 for every station during its own brief
-                # outages, so retry with backoff before giving up. A gauge that
-                # still fails keeps its previous reading (subject to the 24 h rule).
-                for attempt in range(3):
-                    try:
-                        r = await c.get(
-                            f"{CWC}/iam/api/new-entry-data/specification/sorted-page",
-                            params={"sort-criteria": json.dumps(sort), "page-number": "0", "page-size": "4", "specification": json.dumps(spec)},
-                            headers={"class-name": "NewEntryDataDto"},
-                        )
-                        if r.status_code == 200:
-                            rows = [x for x in r.json() if x.get("dataValue") is not None]
-                            break
-                    except Exception:
-                        pass
-                    await asyncio.sleep(1.5 * (attempt + 1))
+            return {"sort-criteria": sort, "page-number": "0", "page-size": "4", "specification": json.dumps(spec)}
+
+        def ingest(code: str, rows: list | None) -> None:
+            nonlocal fresh, failed
             if rows is None:
                 failed += 1
                 return
+            rows = [x for x in rows if x.get("dataValue") is not None]
             if not rows:
                 return
             t = rows[0]["id"]["dataTime"]
@@ -317,9 +357,69 @@ class OfficialData:
             self.latest[code] = {"level_m": rows[0]["dataValue"], "time": t, "trend": trend}
             fresh += 1
 
-        async with httpx.AsyncClient(timeout=30, headers=HEADERS) as c:
-            await asyncio.gather(*(one(c, code) for code in codes))
-        detail = f"{fresh}/{len(codes)} gauges reporting in last 24 h"
+        async with _client(timeout=httpx.Timeout(30, connect=10)) as c:
+            if CWC_RELAY:
+                async def batch(chunk: list[str]) -> None:
+                    body = {"items": [{"path": "/iam/api/new-entry-data/specification/sorted-page", "params": params_for(code), "className": "NewEntryDataDto"} for code in chunk]}
+                    results = None
+                    for attempt in range(2):
+                        try:
+                            r = await c.post(CWC_RELAY, json=body, headers={"x-relay-token": CWC_RELAY_TOKEN}, timeout=httpx.Timeout(60, connect=10))
+                            if r.status_code == 200:
+                                results = r.json().get("results")
+                                break
+                            log.warning("CWC relay batch HTTP %s: %s", r.status_code, r.text[:120])
+                        except Exception as exc:
+                            log.warning("CWC relay batch failed: %r", exc)
+                        await asyncio.sleep(3)
+                    for i, code in enumerate(chunk):
+                        item = results[i] if results and i < len(results) else None
+                        ingest(code, item.get("data") if item and item.get("status") == 200 and isinstance(item.get("data"), list) else None)
+
+                chunks = [codes[i : i + RELAY_BATCH] for i in range(0, len(codes), RELAY_BATCH)]
+                sem = asyncio.Semaphore(3)
+
+                async def guarded(chunk: list[str]) -> None:
+                    async with sem:
+                        await batch(chunk)
+
+                await asyncio.gather(*(guarded(ch) for ch in chunks))
+            else:
+                try:
+                    await c.get(_cwc("/ffm/api/station-water-level-above-warning/"), timeout=httpx.Timeout(12, connect=8))
+                except httpx.TransportError as exc:
+                    msg = f"CWC portal unreachable from this server ({type(exc).__name__}); set JALDRISHTI_CWC_RELAY"
+                    log.warning(msg)
+                    self.errors["cwc"] = msg
+                    store.record_source_health("cwc_readings", ok=False, latency_ms=None, detail=msg)
+                    return 0
+
+                sem = asyncio.Semaphore(8)
+
+                async def one(code: str) -> None:
+                    rows = None
+                    async with sem:
+                        # The portal answers 500 for every station during its own
+                        # brief outages, so retry with backoff before giving up. A
+                        # gauge that still fails keeps its previous reading.
+                        for attempt in range(3):
+                            try:
+                                r = await c.get(
+                                    _cwc("/iam/api/new-entry-data/specification/sorted-page"),
+                                    params=params_for(code),
+                                    headers={"class-name": "NewEntryDataDto"},
+                                )
+                                if r.status_code == 200:
+                                    rows = r.json()
+                                    break
+                            except Exception:
+                                pass
+                            await asyncio.sleep(1.5 * (attempt + 1))
+                    ingest(code, rows)
+
+                await asyncio.gather(*(one(code) for code in codes))
+
+        detail = f"{fresh}/{len(codes)} gauges reporting in last 24 h" + (" via relay" if CWC_RELAY else "")
         if failed:
             detail += f"; portal failed for {failed}, last reading kept"
         store.record_source_health("cwc_readings", ok=fresh > 0, latency_ms=None, detail=detail)
@@ -351,9 +451,9 @@ class OfficialData:
             return cached[1]
         spec = _spec_and(_spec_eq("id.stationCode", code), _spec_eq("id.datatypeCode", "HHS"))
         sort = {"sortOrderDtos": [{"sortDirection": "DESC", "field": "id.dataTime"}]}
-        async with httpx.AsyncClient(timeout=45, headers=HEADERS) as c:
+        async with _client(timeout=45) as c:
             r = await c.get(
-                f"{CWC}/iam/api/new-entry-data/specification/sorted-page",
+                _cwc("/iam/api/new-entry-data/specification/sorted-page"),
                 params={"sort-criteria": json.dumps(sort), "page-number": "0", "page-size": str(hours), "specification": json.dumps(spec)},
                 headers={"class-name": "NewEntryDataDto"},
             )
@@ -372,9 +472,9 @@ class OfficialData:
         spec = _spec_and(_spec_eq("id.stationCode", code), _spec_eq("id.datatypeCode", "HHF"))
         sort = {"sortOrderDtos": [{"sortDirection": "DESC", "field": "id.issuedDate"}]}
         try:
-            async with httpx.AsyncClient(timeout=30, headers=HEADERS) as c:
+            async with _client(timeout=30) as c:
                 r = await c.get(
-                    f"{CWC}/iam/api/new-forecasted-entry-data/specification/sorted-page",
+                    _cwc("/iam/api/new-forecasted-entry-data/specification/sorted-page"),
                     params={"sort-criteria": json.dumps(sort), "page-number": "0", "page-size": "12", "specification": json.dumps(spec)},
                     headers={"class-name": "NewForecastedEntryDataDto"},
                 )
