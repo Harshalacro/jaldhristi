@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# App data
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch
+*.log
+results.csv
+
+# Local secrets and caches
+backend/.env
+backend/.cache/
