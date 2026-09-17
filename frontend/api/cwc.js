@@ -10,7 +10,10 @@
  *   - it only reaches ffs.india-water.gov.in, and only its /iam/api/ and
  *     /ffm/api/ data paths, with GET
  *
- * GET  with header x-cwc-target: "/iam/api/...?query"   -> the CWC response
+ * It also forwards Open-Meteo forecast/flood/archive reads, used only when the
+ * API's shared Render IP is rate limited (HTTP 429) by Open-Meteo.
+ *
+ * GET  with header x-cwc-target: "/iam/api/...?query" or a full allowed URL -> the response
  * POST {"items": [{path, params, className}, ...]}       -> {"results": [{status, data}]}
  *      (up to 120 reads per call, so a full gauge sweep is ~11 invocations)
  */
@@ -18,10 +21,16 @@
 import { timingSafeEqual } from 'node:crypto';
 
 const CWC = 'https://ffs.india-water.gov.in';
-const ALLOWED_PATH = /^\/(iam|ffm)\/api\/[A-Za-z0-9/_-]+\/?$/;
+// Allowed upstreams and, for each, the paths that may be requested.
+const ALLOWED = {
+  [CWC]: /^\/(iam|ffm)\/api\/[A-Za-z0-9/_-]+\/?$/,
+  'https://api.open-meteo.com': /^\/v1\/(forecast|elevation)$/,
+  'https://flood-api.open-meteo.com': /^\/v1\/flood$/,
+  'https://archive-api.open-meteo.com': /^\/v1\/archive$/,
+};
 const MAX_ITEMS = 120;
 const CONCURRENCY = 12;
-const UPSTREAM_TIMEOUT_MS = 20_000;
+const UPSTREAM_TIMEOUT_MS = 45_000;
 const UA = 'Mozilla/5.0 (JalDrishti flood-risk research prototype)';
 
 function authorised(req) {
@@ -32,14 +41,15 @@ function authorised(req) {
 }
 
 function targetUrl(pathWithQuery) {
-  // Parse against the CWC origin so an absolute URL cannot redirect elsewhere.
+  // Relative paths resolve against CWC; absolute URLs must be an allowed origin and path.
   let url;
   try {
     url = new URL(pathWithQuery, CWC);
   } catch {
     return null;
   }
-  if (url.origin !== CWC || !ALLOWED_PATH.test(url.pathname)) return null;
+  const pathRule = Object.hasOwn(ALLOWED, url.origin) ? ALLOWED[url.origin] : null;
+  if (!pathRule || url.username || url.password || !pathRule.test(url.pathname)) return null;
   return url;
 }
 

@@ -37,7 +37,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-7s %(n
 async def _refresh_loop() -> None:
     """Re-score every REFRESH_MINUTES so the dashboard tracks changing conditions."""
     while True:
-        await asyncio.sleep(REFRESH_MINUTES * 60)
+        # Until a first snapshot exists (e.g. the startup pull was rate limited),
+        # retry every few minutes rather than leaving the dashboard empty.
+        await asyncio.sleep(REFRESH_MINUTES * 60 if engine.snapshot is not None else FIRST_RUN_RETRY_S)
+        if engine.refreshing:
+            continue
         try:
             snap = await engine.refresh("schedule")
             log.info("scheduled refresh ok: run %s, %d locations", snap.run_id, len(snap.assessments))
@@ -46,6 +50,7 @@ async def _refresh_loop() -> None:
 
 
 GAUGE_SWEEP_MINUTES = 15
+FIRST_RUN_RETRY_S = 240
 
 
 async def _gauge_loop() -> None:
@@ -89,6 +94,15 @@ async def _bootstrap() -> None:
             log.info("CWC gauge catalogue built: %d stations", n)
     except Exception as exc:
         log.warning("CWC catalogue unavailable, continuing model-only: %s", exc)
+
+    try:
+        from .config import DATA_DIR
+
+        seeded = store.seed_climatology(DATA_DIR / "climatology_seed.json.gz")
+        if seeded:
+            log.info("climatology seeded from bundled file for %d locations", seeded)
+    except Exception as exc:
+        log.warning("climatology seed not loaded: %s", exc)
 
     try:
         await engine.load_climatology()
