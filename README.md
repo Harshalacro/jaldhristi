@@ -469,6 +469,7 @@ Environment variables, all optional:
 | `JALDRISHTI_CORS` | localhost:5173, :4173 | Allowed origins, comma separated |
 | `JALDRISHTI_CORS_REGEX` | *(none)* | Extra origin pattern, e.g. Vercel previews (localhost is always allowed) |
 | `JALDRISHTI_CACHE_DIR` | `backend/.cache` | Archive and hotspot caches; point at a persistent disk in production |
+| `JALDRISHTI_CWC_RELAY` / `_TOKEN` | *(direct)* | Route CWC requests through `frontend/api/cwc.js` on Vercel Mumbai when the API runs outside India |
 | `VITE_API_BASE` | *(proxy)* | Frontend build-time API URL, e.g. `https://jaldrishti-api.onrender.com` |
 
 ## Known limits

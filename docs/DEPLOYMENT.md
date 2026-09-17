@@ -6,9 +6,21 @@ The **backend** (FastAPI) runs on **Render**. The **frontend** (React + Vite) ru
 Browser ──► Vercel (static React app)
                │  VITE_API_BASE = https://<your-api>.onrender.com
                ▼
-            Render (FastAPI, uvicorn) ──► Open-Meteo, GloFAS, CWC, NDMA SACHET, OSM
-               │  JALDRISHTI_CORS = https://<your-app>.vercel.app
+            Render, Singapore (FastAPI) ──► Open-Meteo, GloFAS, NDMA SACHET, OSM
+               │  JALDRISHTI_CWC_RELAY = https://<your-app>.vercel.app/api/cwc
+               ▼
+            Vercel Function, Mumbai (frontend/api/cwc.js) ──► CWC flood portal
 ```
+
+**Why the relay?** The CWC flood portal (ffs.india-water.gov.in) does not answer
+requests from outside India. Render has no Indian region, so the API cannot read
+river gauges directly. A small function in the frontend project runs on Vercel's
+Mumbai region and forwards CWC reads:
+- It only accepts calls that carry a shared secret token.
+- It only reaches CWC data paths.
+- It reads gauges in batches of 100, so a full sweep costs about 11 function calls.
+
+Without the relay, the app still works, but river gauges stay empty and the backend logs `CWC portal unreachable`.
 
 Deploy the backend first, because the frontend needs its URL.
 
@@ -38,7 +50,7 @@ The repository includes [`render.yaml`](../render.yaml), so Render can read the 
    - `GEMINI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, `OPENWEATHER_API_KEY`
    - Paste the keys you have. Leave the others empty.
 4. Click **Apply**. The first build takes about 3–5 minutes.
-5. When the service shows **Live**, copy its URL, for example `https://jaldrishti-api.onrender.com`.
+5. When the service shows **Live**, copy its URL, for example `https://jaldrishti-api-7t3r.onrender.com` (Render adds a suffix when the name is taken).
 
 ### Option B: Manual web service
 
@@ -73,9 +85,9 @@ Open these in a browser. Replace the host with your own.
 
 | URL | Expected |
 |---|---|
-| `https://jaldrishti-api.onrender.com/api/health` | `{"ok": true, "locations": 112, ...}`. Right after boot, `ok` can be `false` for about 30–60 s while the first refresh runs. |
-| `https://jaldrishti-api.onrender.com/api/official/summary` | `stations_read_directly` in the hundreds, plus live `danger` and `warning` counts |
-| `https://jaldrishti-api.onrender.com/docs` | Interactive API documentation |
+| `https://<your-api>.onrender.com/api/health` | `{"ok": true, "locations": 112, ...}`. Right after boot, `ok` can be `false` for about 30–60 s while the first refresh runs. |
+| `https://<your-api>.onrender.com/api/official/summary` | `stations_read_directly` in the hundreds, plus live `danger` and `warning` counts |
+| `https://<your-api>.onrender.com/docs` | Interactive API documentation |
 
 In **Logs** you should see these lines, in order:
 
@@ -106,6 +118,33 @@ In **Logs** you should see these lines, in order:
 4. Click **Deploy**. It takes about 1 minute. Vercel then gives you a URL such as `https://jaldrishti.vercel.app`.
 
 > `VITE_API_BASE` is built into the JavaScript bundle. If you change it later, **redeploy**: go to Deployments, open the ⋯ menu and choose Redeploy. Saving the variable alone does not update the site.
+
+---
+
+## 2b. Turn on the CWC relay
+
+1. Make a random token of at least 16 characters, e.g. run
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+2. **Vercel** → your project → **Settings → Environment Variables** → add:
+
+   | Key | Value | Environments |
+   |---|---|---|
+   | `CWC_RELAY_TOKEN` | the token | Production, Preview |
+
+   Then go to **Deployments → ⋯ → Redeploy**, so the function receives it.
+3. Check that the function runs in Mumbai: **Settings → Functions → Function Region** should show **Mumbai, India (bom1)**. `vercel.json` sets it; if the dashboard shows another region, select Mumbai there and redeploy.
+4. **Render** → jaldrishti-api → **Environment** → add:
+
+   | Key | Value |
+   |---|---|
+   | `JALDRISHTI_CWC_RELAY` | `https://<your-app>.vercel.app/api/cwc` |
+   | `JALDRISHTI_CWC_RELAY_TOKEN` | the same token |
+
+   Click **Save and deploy**.
+5. Verify:
+   - Open `https://<your-app>.vercel.app/api/cwc`. It should answer `{"error":"unauthorised"}`, which means the function is deployed and locked.
+   - About 1 minute after Render restarts, `https://<your-api>.onrender.com/api/official/summary` should show `stations_read_directly` in the hundreds.
+   - Render **Logs** should show `gauge sweep: 9xx gauges reporting`.
 
 ---
 
@@ -145,6 +184,7 @@ If the page stays on "Cannot reach the JalDrishti API":
 | Sleep on idle (Render Free) | The first visit after 15 min idle waits for a cold start and a fresh data pull | Upgrade to Starter ($7/mo), or ping `/api/health` every 10 min with a free uptime monitor (e.g. UptimeRobot) |
 | No persistent disk (Render Free) | The SQLite store and caches reset on each deploy or restart. The 30-year river climatology is rebuilt in the background after boot, using the Open-Meteo quota, and the scores are still valid meanwhile. | On Starter or above, uncomment the `disk:` block in `render.yaml` and set `JALDRISHTI_DB=/var/data/jaldrishti.db` and `JALDRISHTI_CACHE_DIR=/var/data/cache` |
 | 512 MB RAM | PyTorch does not fit, so the **Chronos AI river forecast** is off. The station view still shows the CWC observations and marks. | On a ≥2 GB instance, change the build command to `pip install -r requirements-ml.txt` |
+| Vercel Hobby function usage | The relay makes about 11 calls per 15-minute sweep, plus one per station graph opened: roughly 1–2k calls a day, well inside the free allowance | Nothing to do |
 | Shared outbound IPs | Open-Meteo or Overpass may occasionally return HTTP 429 | The backend backs off and keeps the previous snapshot; nothing to do |
 
 ---

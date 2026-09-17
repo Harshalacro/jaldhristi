@@ -24,6 +24,12 @@ services:
         value: https://jaldrishti(-[a-z0-9-]+)?\.vercel\.app
       - key: JALDRISHTI_REFRESH_MINUTES
         value: "90"
+      # CWC blocks non-Indian servers: route its requests through the relay that
+      # ships with the frontend on Vercel (Mumbai). See docs/DEPLOYMENT.md.
+      - key: JALDRISHTI_CWC_RELAY
+        sync: false               # e.g. https://jaldrishti.vercel.app/api/cwc
+      - key: JALDRISHTI_CWC_RELAY_TOKEN
+        sync: false               # same value as CWC_RELAY_TOKEN on Vercel
       # Optional API keys: set the values in the dashboard (never commit them).
       - key: GEMINI_API_KEY
         sync: false
