@@ -73,11 +73,8 @@ export default function HotspotsPage({ lang, id, locations }) {
       q.set('scenario_mm_h', String(storm));
       q.set('scenario_hours', '3');
     }
-    fetch(`/api/hotspots/${cityId}?${q}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-        return r.json();
-      })
+    api
+      .hotspots(cityId, q)
       .then((d) => {
         if (!alive) return;
         setData(d);

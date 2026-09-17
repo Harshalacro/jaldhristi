@@ -42,7 +42,7 @@ from pathlib import Path
 
 import httpx
 
-from .config import OPEN_METEO_ELEVATION, OPEN_METEO_FORECAST, TIMEZONE
+from .config import CACHE_DIR as CACHE_ROOT, OPEN_METEO_ELEVATION, OPEN_METEO_FORECAST, TIMEZONE
 from .engine import LOCATIONS_BY_ID
 from .features import _now_index
 
@@ -50,7 +50,7 @@ log = logging.getLogger("jaldrishti.hotspots")
 
 N = 16
 STEP = 0.0072  # degrees, ~800 m
-CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "hotspots"
+CACHE_DIR = CACHE_ROOT / "hotspots"
 OVERPASS = [
     "https://overpass-api.de/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",

@@ -28,3 +28,10 @@ results.csv
 # Local secrets and caches
 backend/.env
 backend/.cache/
+
+# Frontend local env and Vercel CLI link
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+.vercel/
+frontend/.vercel/

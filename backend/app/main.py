@@ -22,6 +22,7 @@ from .api import router
 from .config import (
     APP_NAME,
     APP_TAGLINE_EN,
+    CORS_ORIGIN_REGEX,
     CORS_ORIGINS,
     REFRESH_MINUTES,
     REFRESH_ON_STARTUP,
@@ -136,7 +137,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],

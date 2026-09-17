@@ -24,6 +24,7 @@ from . import consensus, explain, features, risk, sources, store
 from .ml import ml
 from .official import official
 from .config import (
+    CACHE_DIR,
     DATA_DIR,
     REFRESH_MINUTES,
     SOURCE_CITATIONS,
@@ -56,7 +57,7 @@ LOCATIONS: list[dict] = _load_locations()
 EVENTS: list[dict] = _load_events()
 LOCATIONS_BY_ID: dict[str, dict] = {l["id"]: l for l in LOCATIONS}
 ENRICHED = (DATA_DIR / "locations.enriched.json").exists()
-REPLAY_CACHE = DATA_DIR.parent.parent / ".cache" / "archive"
+REPLAY_CACHE = CACHE_DIR / "archive"
 
 
 # ------------------------------------------------------------- in-memory state

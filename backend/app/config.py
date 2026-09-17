@@ -81,6 +81,15 @@ CORS_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+# Hosted frontends get a new URL per preview deployment (e.g. Vercel's
+# jaldrishti-git-branch-user.vercel.app), so a regex can allow the family.
+_LOCAL_ORIGINS = r"http://(localhost|127\.0\.0\.1):\d+"
+_EXTRA_ORIGINS = os.getenv("JALDRISHTI_CORS_REGEX", "").strip()
+CORS_ORIGIN_REGEX = f"(?:{_LOCAL_ORIGINS})|(?:{_EXTRA_ORIGINS})" if _EXTRA_ORIGINS else _LOCAL_ORIGINS
+
+# Where regenerable caches (archive replays, hotspot grids) live. Point it at a
+# persistent disk in production; the default sits beside the code.
+CACHE_DIR = Path(os.getenv("JALDRISHTI_CACHE_DIR", BASE_DIR.parent / ".cache"))
 
 # ---------------------------------------------------------------- data sources
 

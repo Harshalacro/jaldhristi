@@ -22,7 +22,7 @@ Two terminals. No API keys, no signups, no database server.
 ```bash
 # 1 — backend
 cd backend
-pip install -r requirements.txt
+pip install -r requirements.txt        # or requirements-ml.txt for AI river forecasts (PyTorch)
 python -m uvicorn app.main:app --reload --port 8000
 
 # 2 — frontend
@@ -40,12 +40,14 @@ any of them (see [API keys](#api-keys)). None are required.
 python backend/scripts/bootstrap_ml.py   # builds climatology + trains the classifier
 ```
 
-The backend scores all 41 locations within about ten seconds of booting, then
+The backend scores all 112 locations within about ten seconds of booting, then
 builds a 30-year river climatology in the background and re-scores with proper
 seasonal context. The dashboard is usable immediately and gets sharper a couple of
 minutes later; the confidence badge tells you which state it is in.
 
 API docs are at `http://localhost:8000/docs`.
+
+**Deploying** (backend on Render, frontend on Vercel): see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
@@ -464,8 +466,10 @@ Environment variables, all optional:
 | `JALDRISHTI_DB` | `backend/jaldrishti.db` | SQLite path |
 | `JALDRISHTI_ML_WEIGHT` | `0.35` | Blend weight for the trained model |
 | `JALDRISHTI_CLIMO_START` / `_END` | `1994` / `2024` | Climatology period |
-| `JALDRISHTI_CORS` | localhost:5173, :4173 | Allowed origins |
-| `VITE_API_BASE` | *(proxy)* | Set if the API is not behind the Vite proxy |
+| `JALDRISHTI_CORS` | localhost:5173, :4173 | Allowed origins, comma separated |
+| `JALDRISHTI_CORS_REGEX` | *(none)* | Extra origin pattern, e.g. Vercel previews (localhost is always allowed) |
+| `JALDRISHTI_CACHE_DIR` | `backend/.cache` | Archive and hotspot caches; point at a persistent disk in production |
+| `VITE_API_BASE` | *(proxy)* | Frontend build-time API URL, e.g. `https://jaldrishti-api.onrender.com` |
 
 ## Known limits
 

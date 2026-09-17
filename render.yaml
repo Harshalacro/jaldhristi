@@ -1,0 +1,44 @@
+# Render Blueprint for the JalDrishti API.
+# Render dashboard -> New -> Blueprint -> pick this repository.
+services:
+  - type: web
+    name: jaldrishti-api
+    runtime: python
+    rootDir: backend
+    plan: free                     # "starter" or above to add the persistent disk below
+    region: singapore              # closest Render region to India
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Exact frontend origins, comma separated. Replace with your Vercel domain.
+      - key: JALDRISHTI_CORS
+        value: https://jaldrishti.vercel.app
+      # Also allow Vercel preview deployments of the same project.
+      - key: JALDRISHTI_CORS_REGEX
+        value: https://jaldrishti(-[a-z0-9-]+)?\.vercel\.app
+      - key: JALDRISHTI_REFRESH_MINUTES
+        value: "90"
+      # Optional API keys: set the values in the dashboard (never commit them).
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+    # Paid plans only: keep the SQLite store and caches across deploys/restarts,
+    # so the 30-year climatology is not rebuilt on every boot.
+    # disk:
+    #   name: jaldrishti-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # ...and add these env vars:
+    #   JALDRISHTI_DB=/var/data/jaldrishti.db
+    #   JALDRISHTI_CACHE_DIR=/var/data/cache

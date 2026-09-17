@@ -7,7 +7,8 @@
  * "first run in flight" screen instead of an error.
  */
 
-const BASE = import.meta.env.VITE_API_BASE ?? '';
+// Empty in development (Vite proxies /api); the Render URL in production.
+const BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '');
 
 export class ApiError extends Error {
   constructor(message, { status, warming = false } = {}) {
@@ -80,6 +81,8 @@ export const api = {
     request(`/api/official/alerts${floodOnly ? '?flood_only=true' : ''}`, opts),
   station: (code, opts) => request(`/api/official/station/${encodeURIComponent(code)}`, opts),
   rivers: (opts) => request('/api/rivers', opts),
+  hotspots: (id, params, opts) =>
+    request(`/api/hotspots/${encodeURIComponent(id)}?${new URLSearchParams(params)}`, opts),
 
   // AI / ML
   aiStatus: (opts) => request('/api/ai/status', opts),
