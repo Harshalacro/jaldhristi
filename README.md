@@ -1,12 +1,15 @@
 # JalDrishti · जलदृष्टि
 
-**Hyperlocal Flood Prediction & Response — a working prototype for India**
+**Hyperlocal Rainfall Early Warning & Inundation Prediction — a working prototype for India**
 
-A country → state → hyperlocal flood-risk dashboard that runs on live public data,
-scores 112 locations covering all 36 states and union territories, fuses in live
-Central Water Commission river gauges and NDMA SACHET official alerts, explains
-every score in plain language in English and Hindi, communicates its own
-uncertainty, and can be back-tested against real past floods.
+An AI/ML early-warning system that integrates **observational weather**, **numerical
+weather prediction** rainfall forecasts, **satellite-derived terrain and hydrological
+reanalysis**, and **official gauge observations and alerts** into one warning level per
+place. It scores 112 locations covering all 36 states and union territories, maps
+street-level inundation on an 800 m grid, states how long the warning holds (72 h town
+trajectory, 48 h ponding timeline, hours-to-danger per river gauge), explains every
+score in English and Hindi, communicates its own uncertainty, and can be back-tested
+against real past floods.
 
 > **This is a prototype for research and demonstration.** It is **not** an official
 > Government of India service and **not** a public flood warning system. For
@@ -177,6 +180,20 @@ monsoon system and simply are not in the hand-compiled register.
 
 Everything runs on Tier-1 free, keyless APIs, so the project has no
 approval-waitlist risk.
+
+The four input families the system integrates:
+
+| Family | In this project |
+|---|---|
+| Observational weather | Open-Meteo hourly rainfall and soil moisture on a ~5 km analysis grid |
+| Numerical weather prediction | Open-Meteo forecast API (ICON / GFS) rainfall out to 7 days — the forward-looking input |
+| Satellite-derived and reanalysis | GloFAS v4 discharge (Copernicus EMS, satellite-informed) and Copernicus DEM GLO-90 (TanDEM-X) terrain |
+| Official observations and warnings | CWC gauge levels against warning and danger marks; NDMA SACHET CAP alerts from IMD, CWC and State DMAs |
+
+**Radar.** Live Doppler radar is *not* ingested: IMD and ISRO publish no open radar
+API. The prototype proves the same pipeline on open satellite-informed data (GloFAS
+reanalysis and forecast) plus NWP rainfall; radar nowcasting is the production upgrade
+once data sharing is arranged.
 
 | Source | Gives | Licence |
 |---|---|---|
@@ -475,16 +492,18 @@ Environment variables, all optional:
 ## Known limits
 
 - **Open-Meteo free-tier quotas** are per-coordinate and enforced per minute *and
-  per hour*. Building the 30-year climatology for 41 locations can exhaust the
+  per hour*. Building the 30-year climatology for 112 locations can exhaust the
   hourly budget; the engine falls back to a short recent-window baseline, drops the
   confidence badge, and states the reason. `ensure_climatology()` fills the gaps on
   the next boot.
 - **GloFAS is a model, not a gauge.** It simulates discharge at ~5 km; it is not a
   CWC station reading. Snapping puts it on the right channel but it remains a
   reanalysis product.
-- **41 locations, not every settlement.** The location set is a representative
-  sample chosen for basin and coastal diversity, and extending it is a matter of
+- **112 locations, not every settlement.** The location set covers all 36 states and
+  UTs and is chosen for basin and coastal diversity; extending it is a matter of
   adding rows to `locations.json` and re-running the enrichment script.
+- **No live radar.** See the note under [Data sources](#data-sources): radar
+  nowcasting needs IMD/ISRO data sharing that no public API offers today.
 - **The historical register is hand-compiled** and not exhaustive. It is adequate
   for a recency-weighted frequency feature and for back-testing, and is not a
   substitute for an official disaster database.

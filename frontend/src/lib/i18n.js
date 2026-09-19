@@ -16,8 +16,8 @@ const STRINGS = {
   appName: { en: 'JalDrishti', hi: 'जलदृष्टि' },
   appNameAlt: { en: 'जलदृष्टि', hi: 'JalDrishti' },
   tagline: {
-    en: 'Hyperlocal Flood Prediction & Response',
-    hi: 'अति-स्थानीय बाढ़ पूर्वानुमान एवं प्रतिक्रिया',
+    en: 'Hyperlocal Rainfall Early Warning & Inundation Prediction',
+    hi: 'अति-स्थानीय वर्षा पूर्व चेतावनी एवं जलभराव पूर्वानुमान',
   },
   prototype: { en: 'Prototype', hi: 'प्रोटोटाइप' },
   live: { en: 'Live', hi: 'लाइव' },
