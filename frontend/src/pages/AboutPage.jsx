@@ -9,6 +9,22 @@ const hi = (lang) => (lang === 'hi' ? 'font-devanagari' : '');
 
 const ROWS = [
   {
+    req: ['Early warning with lead time', 'पूर्व चेतावनी एवं अग्रिम समय'],
+    how: [
+      'Every place carries an IMD-aligned warning level (Green, Yellow, Orange, Red) with the NDMA action for that level, a stated confidence, and how long the warning holds: a 72 h town trajectory, a 48 h street-ponding timeline, and hours-to-danger for each river gauge',
+      'हर स्थान पर IMD अनुरूप चेतावनी स्तर (हरा, पीला, नारंगी, लाल), NDMA कार्रवाई, विश्वसनीयता तथा अग्रिम समय: 72 घंटे का प्रक्षेपवक्र, 48 घंटे की जलभराव समयरेखा व खतरे तक शेष घंटे',
+    ],
+    link: ['/', 'Live warning levels'],
+  },
+  {
+    req: ['Multi-source data integration', 'बहु-स्रोत आँकड़ा एकीकरण'],
+    how: [
+      'Observational weather (hourly rainfall and soil moisture), numerical weather prediction rainfall forecasts, satellite-derived terrain (Copernicus DEM) and satellite-informed hydrological reanalysis and forecast (GloFAS v4), fused with official CWC gauge observations and NDMA/IMD alerts in one score',
+      'प्रेक्षित मौसम, संख्यात्मक मौसम पूर्वानुमान वर्षा, उपग्रह-आधारित भूभाग (Copernicus DEM) एवं जल-विज्ञान पुनर्विश्लेषण (GloFAS v4), CWC गेज प्रेक्षण व NDMA/IMD चेतावनियों के साथ एक स्कोर में',
+    ],
+    link: ['/location/patna', 'See the inputs'],
+  },
+  {
     req: ['Street-level waterlogging detection', 'गली-स्तरीय जलभराव पहचान'],
     how: [
       '800 m grid per city: DEM low ground, sink depth and D8 flow accumulation; OpenStreetMap drains, roads and built-up land; hourly rain on a 3×3 lattice; an hour-by-hour ponding model',
@@ -82,7 +98,44 @@ const ROWS = [
   },
 ];
 
+const SOURCES = [
+  {
+    kind: ['Observational weather', 'प्रेक्षित मौसम'],
+    items: ['Open-Meteo — hourly rainfall and soil moisture on a ~5 km analysis grid'],
+  },
+  {
+    kind: ['Numerical weather prediction', 'संख्यात्मक मौसम पूर्वानुमान'],
+    items: ['Open-Meteo forecast API — ICON / GFS rainfall out to 7 days, used as the forward-looking input'],
+  },
+  {
+    kind: ['Satellite-derived and reanalysis', 'उपग्रह-आधारित एवं पुनर्विश्लेषण'],
+    items: [
+      'GloFAS v4 (Copernicus Emergency Management Service) — river discharge with a 30-member ensemble and 1994–2024 climatology',
+      'Copernicus DEM GLO-90 (TanDEM-X) — elevation, slope, sinks and flow accumulation',
+    ],
+  },
+  {
+    kind: ['Official observations and warnings', 'आधिकारिक प्रेक्षण एवं चेतावनियाँ'],
+    items: [
+      'Central Water Commission — 1,036 river gauges, hourly levels, warning and danger marks',
+      'NDMA SACHET — live CAP alerts issued by IMD, CWC and State DMAs',
+    ],
+  },
+  {
+    kind: ['Terrain, drainage and models', 'भूभाग, जल-निकासी एवं मॉडल'],
+    items: [
+      'OpenStreetMap — drains, roads, land use, hospitals, schools, underpasses',
+      'Hugging Face amazon/chronos-bolt-small — 48 h river-level forecasting',
+      'Natural Earth — river network geometry',
+    ],
+  },
+];
+
 const LIMITS = [
+  [
+    'Live Doppler radar is not ingested: IMD and ISRO publish no open radar API. The prototype validates the same pipeline on open satellite-informed data (GloFAS reanalysis and forecast) and NWP rainfall; radar nowcasting is the production upgrade once data sharing is arranged.',
+    'लाइव डॉपलर रडार सम्मिलित नहीं: IMD/ISRO का कोई खुला रडार API नहीं है। प्रोटोटाइप वही पाइपलाइन खुले उपग्रह-आधारित आँकड़ों (GloFAS) व NWP वर्षा पर सिद्ध करता है; डेटा साझेदारी के बाद रडार नाउकास्टिंग अगला चरण है।',
+  ],
   ['The DEM is 90 m: individual underpasses and kerb-level dips are below its resolution.', 'DEM 90 मी है: अलग-अलग अंडरपास इसकी सूक्ष्मता से छोटे हैं।'],
   ['No open storm-sewer network data exists for Indian cities, so drainage capacity is estimated from mapped drains and land use.', 'भारतीय शहरों के सीवर नेटवर्क के खुले आँकड़े नहीं हैं; नाली क्षमता अनुमानित है।'],
   ['CWC data comes from the endpoints behind its flood-forecast portal, not a documented public API, and may change.', 'CWC आँकड़े उसके पोर्टल के आंतरिक एंडपॉइंट से हैं, प्रलेखित API से नहीं।'],
@@ -99,8 +152,8 @@ export default function AboutPage({ lang }) {
         </h1>
         <p className={`mt-1 text-[12.5px] text-ink-400 ${hi(lang)}`}>
           {lang === 'hi'
-            ? 'अति-स्थानीय शहरी बाढ़ पूर्वानुमान एवं प्रतिक्रिया मंच — इसकी क्षमताएँ, कार्यप्रणाली, आँकड़ा स्रोत और सीमाएँ'
-            : 'Hyperlocal flood prediction and response platform — its capabilities, how they work, the data behind them, and their limits'}
+            ? 'एआई/एमएल आधारित एकीकृत भारी वर्षा पूर्व चेतावनी एवं जलभराव पूर्वानुमान प्रणाली — क्षमताएँ, कार्यप्रणाली, आँकड़ा स्रोत और सीमाएँ'
+            : 'An AI/ML integrated heavy-rainfall early warning and inundation prediction system — its capabilities, how they work, the data behind them, and their limits'}
         </p>
       </div>
 
@@ -130,15 +183,18 @@ export default function AboutPage({ lang }) {
       <div className="grid gap-4 md:grid-cols-2">
         <section className="panel p-4">
           <h2 className={`text-[13px] font-bold uppercase tracking-wider text-chakra-500 ${hi(lang)}`}>{lang === 'hi' ? 'आँकड़ा स्रोत' : 'Data sources'}</h2>
-          <ul className="mt-2 space-y-1.5 text-[12px] text-ink-200">
-            <li>• Central Water Commission — 1,036 river gauges, hourly levels, danger marks</li>
-            <li>• NDMA SACHET — live CAP alerts from IMD, CWC and State DMAs</li>
-            <li>• Open-Meteo — hourly rainfall and soil moisture; GloFAS v4 river discharge (1994–2024 climatology)</li>
-            <li>• Copernicus DEM GLO-90 — elevation for terrain and hotspots</li>
-            <li>• OpenStreetMap — drains, roads, land use, hospitals, schools, underpasses</li>
-            <li>• Hugging Face amazon/chronos-bolt-small — river-level forecasting</li>
-            <li>• Natural Earth — river network geometry</li>
-          </ul>
+          <dl className="mt-2 space-y-2.5 text-[12px] text-ink-200">
+            {SOURCES.map((g) => (
+              <div key={g.kind[0]}>
+                <dt className={`text-[10.5px] font-bold uppercase tracking-wider text-ink-500 ${hi(lang)}`}>
+                  {lang === 'hi' ? g.kind[1] : g.kind[0]}
+                </dt>
+                {g.items.map((it) => (
+                  <dd key={it} className="ml-0 mt-0.5">• {it}</dd>
+                ))}
+              </div>
+            ))}
+          </dl>
         </section>
         <section className="panel p-4">
           <h2 className={`text-[13px] font-bold uppercase tracking-wider text-chakra-500 ${hi(lang)}`}>{lang === 'hi' ? 'ज्ञात सीमाएँ' : 'Known limitations'}</h2>

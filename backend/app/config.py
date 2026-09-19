@@ -12,8 +12,8 @@ import os
 from pathlib import Path
 
 APP_NAME = "JalDrishti"
-APP_TAGLINE_EN = "Hyperlocal Flood Prediction & Response"
-APP_TAGLINE_HI = "अति-स्थानीय बाढ़ पूर्वानुमान एवं प्रतिक्रिया"
+APP_TAGLINE_EN = "Hyperlocal Rainfall Early Warning & Inundation Prediction"
+APP_TAGLINE_HI = "अति-स्थानीय वर्षा पूर्व चेतावनी एवं जलभराव पूर्वानुमान"
 VERSION = "1.0.0"
 
 BASE_DIR = Path(__file__).resolve().parent
