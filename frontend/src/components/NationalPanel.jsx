@@ -41,7 +41,9 @@ export default function NationalPanel({
   }, [locations, tierFilter]);
 
   return (
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    // One scrolling column: three panels competing for a fixed height used to
+    // crush the watchlist header when a tier filter was on.
+    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1 scrollbar-thin">
       {/* ------------------------------------------------ national situation */}
       <section className="panel shrink-0">
         <SectionHead
@@ -106,14 +108,14 @@ export default function NationalPanel({
       </section>
 
       {/* ------------------------------------------------------- watchlist */}
-      <section className="panel flex max-h-[26rem] flex-col lg:min-h-0 lg:max-h-none lg:flex-1">
+      <section className="panel flex shrink-0 flex-col">
         <SectionHead
           title={tierFilter
             ? `${lang === 'hi' ? TIER_LABELS[tierFilter].hi : TIER_LABELS[tierFilter].en} · ${watchlist.length}`
             : t(lang, 'highestRisk')}
           lang={lang}
         />
-        <ul className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        <ul className="max-h-[min(58vh,30rem)] overflow-y-auto scrollbar-thin">
           {watchlist.length === 0 && (
             <li className="px-4 py-6 text-center text-[11px] text-ink-500">
               {lang === 'hi' ? 'इस श्रेणी में कोई स्थान नहीं' : 'No locations at this level'}
@@ -180,7 +182,7 @@ export default function NationalPanel({
       </section>
 
       {/* -------------------------------------------- state / basin roll-up */}
-      <section className="panel flex max-h-[18rem] shrink-0 flex-col lg:min-h-0 lg:max-h-[34%]">
+      <section className="panel flex shrink-0 flex-col">
         <div className="panel-head">
           <div className="flex items-center rounded-md border border-ink-700/70 bg-ink-850/70 p-0.5">
             {[
@@ -207,7 +209,7 @@ export default function NationalPanel({
         {grouping === 'ai' ? (
           <NationalInsights lang={lang} onSelectLocation={onSelectLocation} runId={country?.meta?.run_id} />
         ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        <ul className="max-h-[min(42vh,22rem)] overflow-y-auto scrollbar-thin">
           {(grouping === 'state' ? (country?.states ?? []) : (country?.basins ?? [])).map((row) => {
             const name = grouping === 'state' ? stateName(row.state, lang) : row.basin;
             const clickable = grouping === 'state';
@@ -282,7 +284,7 @@ export function StatePanel({
   if (!state) return null;
 
   return (
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1 scrollbar-thin">
       <section className="panel shrink-0">
         <div className="panel-head">
           <button type="button" className="btn btn-ghost px-2 py-1 text-[10.5px]" onClick={onBack}>
@@ -322,7 +324,7 @@ export function StatePanel({
         </div>
       </section>
 
-      <section className="panel flex max-h-[30rem] flex-col lg:min-h-0 lg:max-h-none lg:flex-1">
+      <section className="panel flex shrink-0 flex-col">
         <div className="panel-head">
           <h3 className={`panel-title ${lang === 'hi' ? 'font-devanagari' : ''}`}>
             {t(lang, 'monitored')}
@@ -340,7 +342,7 @@ export function StatePanel({
           </select>
         </div>
 
-        <ul className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        <ul className="max-h-[min(62vh,34rem)] overflow-y-auto scrollbar-thin">
           {rows.map((a) => {
             const loc = a.location;
             const selected = loc.id === selectedLocationId;
